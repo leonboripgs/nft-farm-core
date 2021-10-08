@@ -13,29 +13,25 @@ contract MasterDemon is Ownable, ReentrancyGuard {
     using Address for address;
 
     struct UserInfo {
-        uint256 amountStaked; // how many nfts did user staked
-        uint256 currentRewad; // how much reward should user get
-        uint256[] tokenIds; // ids of nfts user staked
-        mapping(uint256 => bool) tokenIdsMapping; // for checking if user really staked tokens
-        mapping(uint256 => uint256) tokenIndex; // for delicate operations
+        uint256 tokenId;
+        address contractAddress;
     }
 
-    struct NftCollection {
+    struct Collection {
         // some dummy values
-        bool isStakable;
-        address collectionAddress;
         uint256 stakingFee;
         uint256 harvestingFee;
         uint256 withdrawingFee;
         uint256 normalizer;
         uint256 multiplier;
+        bool isStakable;
     }
 
     /// @notice address => each user
-    mapping(address => UserInfo) public userInfo;
+    mapping(address => UserInfo[]) public userInfo;
 
     /// @notice array of each nft collection
-    NftCollection[] public nftCollection;
+    mapping(address => Collection) public collections;
 
     /// @notice LLTH token
     IERC20 public llth;
@@ -78,21 +74,21 @@ contract MasterDemon is Ownable, ReentrancyGuard {
 
     /// @notice stake single nft (called in external function)
     /// @param _user = msg.sender
-    /// @param _cid = collection id
+    /// @param _nft = collection address
     /// @param _id = nft id
     function _stake(
         address _user,
-        uint256 _cid,
+        address _nft,
         uint256 _id
     ) internal {
-        NftCollection memory collection = nftCollection[_cid];
-        UserInfo storage user = userInfo[_user];
+        Collection memory collection = collections[_nft];
+        UserInfo memory user;
         require(
-            IERC721(collection.collectionAddress).ownerOf(_id) ==
+            IERC721(collection.contractAddress).ownerOf(_id) ==
                 address(_user),
             "ERR: YOU DONT OWN THIS TOKEN"
         );
-        IERC721(collection.collectionAddress).safeTransferFrom(
+        IERC721(collection.contractAddress).safeTransferFrom(
             _user,
             address(this),
             _id
@@ -102,24 +98,26 @@ contract MasterDemon is Ownable, ReentrancyGuard {
         user.tokenIdsMapping[_id] == true;
 
         emit UserStaked(_user);
+
+        userInfo[_user].push(user);
     }
 
     /// @notice unstake single nft (called in external function)
     /// @param _user = msg.sender
-    /// @param _cid = collection id
+    /// @param _nft = collection address
     /// @param _id = nft id
     function _unstake(
         address _user,
-        uint256 _cid,
+        address _nft,
         uint256 _id
     ) internal {
-        NftCollection memory collection = nftCollection[_cid];
+        Collection memory collection = collections[_nft];
         UserInfo storage user = userInfo[_user];
         require(
             user.tokenIdsMapping[_id] == true,
             "YOU DONT OWN THE TOKEN AT GIVEN INDEX"
         );
-        IERC721(collection.collectionAddress).safeTransferFrom(
+        IERC721(collection.contractAddress).safeTransferFrom(
             address(this),
             _user,
             _id
@@ -194,39 +192,36 @@ contract MasterDemon is Ownable, ReentrancyGuard {
 
     function setCollection(
         bool _isStakable,
-        address _collectionAddress,
+        address _contractAddress,
         uint256 _stakingFee,
         uint256 _harvestingFee,
         uint256 _withdrawingFee,
         uint256 _normalizer,
         uint256 _multiplier
     ) public onlyOwner {
-        nftCollection.push(
-            NftCollection({
-                isStakable: _isStakable,
-                collectionAddress: _collectionAddress,
-                stakingFee: _stakingFee,
-                harvestingFee: _harvestingFee,
-                withdrawingFee: _withdrawingFee,
-                normalizer: _normalizer,
-                multiplier: _multiplier
-            })
-        );
+        collections[_contractAddress] = Collection({
+            stakingFee: _stakingFee,
+            harvestingFee: _harvestingFee,
+            withdrawingFee: _withdrawingFee,
+            normalizer: _normalizer,
+            multiplier: _multiplier,
+            isStakable: _isStakable,
+        });
     }
 
     function updateCollection(
         uint256 _cid,
         bool _isStakable,
-        address _collectionAddress,
+        address _contractAddress,
         uint256 _stakingFee,
         uint256 _harvestingFee,
         uint256 _withdrawingFee,
         uint256 _normalizer,
         uint256 _multiplier
     ) public onlyOwner {
-        NftCollection memory collection = nftCollection[_cid];
+        Collection memory collection = collections[_cid];
         collection.isStakable = _isStakable;
-        collection.collectionAddress = _collectionAddress;
+        collection.contractAddress = _contractAddress;
         collection.stakingFee = _stakingFee;
         collection.harvestingFee = _harvestingFee;
         collection.withdrawingFee = _withdrawingFee;
@@ -235,7 +230,7 @@ contract MasterDemon is Ownable, ReentrancyGuard {
     }
 
     function manageCollection(uint256 _cid, bool _isStakable) public onlyOwner {
-        NftCollection memory collection = nftCollection[_cid];
+        Collection memory collection = collections[_cid];
         collection.isStakable = _isStakable;
     }
 
